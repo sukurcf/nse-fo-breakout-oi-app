@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>NSE F&amp;O Breakout Monitor</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="NSE F&O Breakout Monitor home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy">
+            <strong>Range<span>watch</span></strong>
+            <small>NSE F&amp;O MONITOR</small>
+          </span>
+        </a>
+        <nav class="main-nav" aria-label="Main navigation">
+          <a href="#signals">Signals</a>
+          <a href="#watchlist">Watchlist</a>
+          <a href="#data">Replay data</a>
+          <a href="#audit">Audit</a>
+        </nav>
+        <div class="top-actions">
+          <label class="date-picker">
+            <span>SESSION DATE · IST</span>
+            <input id="trading-date" type="date" required>
+          </label>
+          <button id="refresh-button" class="button button-quiet" type="button">Refresh</button>
+          <a id="export-button" class="button button-primary" href="/api/export/signals.csv">Export</a>
+        </div>
+      </header>
+
+      <div class="mode-banner" role="status">
+        <span class="mode-dot" aria-hidden="true"></span>
+        <div>
+          <strong>Replay workspace · no live feeds</strong>
+          <span>Only user-imported data is evaluated. No external alerts or orders are sent.</span>
+        </div>
+        <span class="mode-badge">LOCAL ONLY</span>
+      </div>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+      <main>
+        <section class="page-heading">
+          <div>
+            <p class="eyebrow">PRICE ACTION · OPENING RANGE · AUDITABLE REPLAY</p>
+            <h1>Breakout monitor</h1>
+            <p class="intro">Completed-candle signals for the first 15- and 30-minute ranges, with collision levels and raw contract OI context.</p>
+          </div>
+          <p class="safety-copy">Informational only. Not investment advice. You make every trading decision.</p>
+        </section>
+
+        <section class="metric-grid" aria-label="Replay summary">
+          <article class="metric-card">
+            <span class="metric-label">MONITORED</span>
+            <strong id="metric-watchlist">—</strong>
+            <small>symbols in this session</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">CONFIRMED EVENTS</span>
+            <strong id="metric-signals">—</strong>
+            <small>active replay results</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">RANGES READY</span>
+            <strong id="metric-ranges">—</strong>
+            <small>complete 15M / 30M ranges</small>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">DATA ISSUES</span>
+            <strong id="metric-issues">—</strong>
+            <small>gaps and validation warnings</small>
+          </article>
+        </section>
+
+        <div class="primary-grid">
+          <section id="signals" class="panel signal-panel">
+            <div class="panel-heading signal-heading">
+              <div>
+                <p class="eyebrow">PRICE EVENTS ONLY</p>
+                <h2>Confirmed signals</h2>
+              </div>
+              <span id="signal-count" class="count-pill">0 events</span>
+            </div>
+            <div class="filter-row" aria-label="Signal filters">
+              <label class="filter-field">
+                <span>SYMBOL</span>
+                <input id="filter-symbol" type="search" placeholder="All symbols" autocomplete="off">
+              </label>
+              <label class="filter-field">
+                <span>DIRECTION</span>
+                <select id="filter-direction">
+                  <option value="">All directions</option>
+                  <option value="bullish">Bullish</option>
+                  <option value="bearish">Bearish</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>TIMEFRAME</span>
+                <select id="filter-timeframe">
+                  <option value="">All ranges</option>
+                  <option value="15M">15 minute</option>
+                  <option value="30M">30 minute</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>EVENT TYPE</span>
+                <select id="filter-type">
+                  <option value="">Direct + collision</option>
+                  <option value="direct">Direct break</option>
+                  <option value="collision">Collision break</option>
+                </select>
+              </label>
+              <label class="filter-field">
+                <span>OI CONTEXT</span>
+                <select id="filter-oi">
+                  <option value="">Any OI status</option>
+                  <option value="unavailable">Unavailable</option>
+                  <option value="stale">Stale</option>
+                  <option value="illiquid">Illiquid</option>
+                  <option value="raw_only_uncalibrated">Raw · uncalibrated</option>
+                </select>
+              </label>
+              <label class="filter-check">
+                <input id="filter-superseded" type="checkbox">
+                <span>Include corrected / superseded events</span>
+              </label>
+            </div>
+            <div id="signals-list" class="signals-list" aria-live="polite">
+              <div class="loading-state">Loading replay state…</div>
+            </div>
+            <div class="panel-footnote">A signal is a rule-based price event, not a trade instruction. Consecutive closes beyond an unchanged level are deduplicated.</div>
+          </section>
+
+          <aside class="panel health-panel" aria-labelledby="health-title">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">SERVICE &amp; DATA QUALITY</p>
+                <h2 id="health-title">System health</h2>
+              </div>
+              <span class="status-chip status-neutral">REPLAY</span>
+            </div>
+            <ul id="health-list" class="health-list">
+              <li class="loading-state">Checking local state…</li>
+            </ul>
+            <div class="alert-controls">
+              <div>
+                <strong>Alert preference</strong>
+                <span>Stored signals remain visible when paused.</span>
+              </div>
+              <button id="alerts-toggle" class="button button-quiet" type="button">Pause alerts</button>
+            </div>
+            <p class="micro-copy">Replay mode has no Telegram, browser push, live-feed polling, or order-execution path.</p>
+          </aside>
+        </div>
+
+        <div class="secondary-grid">
+          <section id="watchlist" class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">DAILY UNIVERSE · SEPARATE FROM SIGNALS</p>
+                <h2>Watchlist</h2>
+              </div>
+              <span id="watchlist-count" class="count-pill">0 symbols</span>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">SYMBOL</th>
+                    <th scope="col">BEACON</th>
+                    <th scope="col">MAPPING</th>
+                    <th scope="col">15M / 30M</th>
+                    <th scope="col">CANDLES / CONTROL</th>
+                  </tr>
+                </thead>
+                <tbody id="watchlist-body">
+                  <tr><td colspan="5" class="table-empty">No monitored symbols for this date.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p id="unmapped-note" class="micro-copy"></p>
+          </section>
+
+          <section id="oi" class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">CONTRACT-LEVEL · NO SCORE</p>
+                <h2>Open-interest context</h2>
+              </div>
+              <span id="oi-count" class="count-pill">0 contracts</span>
+            </div>
+            <div class="table-scroll oi-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">CONTRACT</th>
+                    <th scope="col">OI</th>
+                    <th scope="col">OI Δ</th>
+                    <th scope="col">VOLUME</th>
+                    <th scope="col">LTP</th>
+                    <th scope="col">SOURCE TIME</th>
+                  </tr>
+                </thead>
+                <tbody id="oi-body">
+                  <tr><td colspan="6" class="table-empty">No OI snapshots imported.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="micro-copy">Calls and Puts stay separate. Raw OI does not prove buying or selling; no aggregate or calibrated score is shown.</p>
+          </section>
+        </div>
+
+        <section id="data" class="panel import-panel">
+          <div class="panel-heading import-heading">
+            <div>
+              <p class="eyebrow">AUTHORIZED INPUTS ONLY · APPEND-ONLY HISTORY</p>
+              <h2>Replay data &amp; manual intake</h2>
+            </div>
+            <div class="import-heading-actions">
+              <span class="status-chip status-warning">NO PROVIDER ADAPTERS</span>
+              <a class="button button-quiet" href="/api/export/backup.sqlite">Download local backup</a>
+            </div>
+          </div>
+          <p class="section-intro">Imports are local and auditable. Use normalized exports from a data source you are permitted to access. This app does not visit TradeFinder, authenticate to a provider, or verify your data licence.</p>
+          <div class="import-grid">
+            <form id="mapping-form" class="import-card">
+              <div class="import-card-heading">
+                <span class="step-number">01</span>
+                <div><h3>Map a monitored symbol</h3><p>Explicit ID and F&amp;O confirmation required.</p></div>
+              </div>
+              <label>Normalized NSE symbol<input id="mapping-symbol" name="symbol" maxlength="32" placeholder="RELIANCE" required></label>
+              <label>Provider cash instrument ID<input id="mapping-id" name="provider_instrument_id" maxlength="128" placeholder="ID from your authorized source" required></label>
+              <label class="checkbox-label"><input id="mapping-confirm" type="checkbox" required> I verified this is an NSE F&amp;O stock and the cash-instrument mapping is correct.</label>
+              <button class="button button-primary" type="submit">Add to today's watchlist</button>
+            </form>
+
+            <form id="beacon-form" class="import-card">
+              <div class="import-card-heading">
+                <span class="step-number">02</span>
+                <div><h3>Record a manual Beacon list</h3><p>Both directions and conflicts are retained.</p></div>
+              </div>
+              <label>Bullish symbols<textarea id="bullish-symbols" rows="2" placeholder="RELIANCE, SBIN"></textarea></label>
+              <label>Bearish symbols<textarea id="bearish-symbols" rows="2" placeholder="TCS, INFY"></textarea></label>
+              <label>Source label<input id="beacon-source" maxlength="80" value="manual_import" required></label>
+              <button class="button button-quiet" type="submit">Record manual observation</button>
+              <p class="micro-copy">No automated Beacon access is performed.</p>
+            </form>
+
+            <form id="candle-form" class="import-card">
+              <div class="import-card-heading">
+                <span class="step-number">03</span>
+                <div><h3>Import normalized candles</h3><p>Five-minute source bars for deterministic replay.</p></div>
+              </div>
+              <label>CSV file<input id="candle-file" type="file" accept=".csv,text/csv" required></label>
+              <p class="format-copy"><code>exchange,symbol,provider_instrument_id,interval_start,interval_end,open,high,low,close,status,provider_time,source</code><br><code>volume</code> is optional. Timestamps must include timezone offsets; rows must be chronological per symbol.</p>
+              <button class="button button-primary" type="submit">Import &amp; replay candles</button>
+              <p class="micro-copy">Only complete/corrected bars can generate events. Missing opening bars, stale bars, gaps, mapping mismatches, and invalid OHLC suppress affected calculations.</p>
+            </form>
+
+            <form id="oi-form" class="import-card">
+              <div class="import-card-heading">
+                <span class="step-number">04</span>
+                <div><h3>Import raw OI snapshots</h3><p>Contract context only; scoring is uncalibrated.</p></div>
+              </div>
+              <label>CSV file<input id="oi-file" type="file" accept=".csv,text/csv" required></label>
+              <p class="format-copy"><code>exchange,symbol,provider_instrument_id,contract_type,expiry,strike,option_type,open_interest,oi_change,volume,ltp,provider_time,source,status</code><br>Futures leave strike/option_type blank. Options require CALL/PUT and a strike.</p>
+              <button class="button button-quiet" type="submit">Import raw OI context</button>
+              <p class="micro-copy">No OI score, percentage change, expiry selection, nearby-strike aggregate, or directional claim is calculated.</p>
+            </form>
+          </div>
+          <div id="import-result" class="import-result" role="status" hidden></div>
+        </section>
+
+        <section id="audit" class="panel audit-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">IMMUTABLE OPERATIONS HISTORY</p>
+              <h2>Recent audit events</h2>
+            </div>
+            <span class="count-pill">Latest 100</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">TIME · IST</th>
+                  <th scope="col">EVENT</th>
+                  <th scope="col">SYMBOL</th>
+                  <th scope="col">DETAIL</th>
+                </tr>
+              </thead>
+              <tbody id="audit-body">
+                <tr><td colspan="4" class="table-empty">No audit events for this session.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <span>Rangewatch · private local replay</span>
+        <span>V1 is alerts-only by design · no order placement</span>
+      </footer>
+    </div>
+  </body>
+</html>
